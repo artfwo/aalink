@@ -40,7 +40,9 @@ struct SchedulerSyncEvent {
 };
 
 struct Scheduler {
-    Scheduler(ableton::Link& link, py::object loop) : m_link(link), m_loop(loop) {}
+    Scheduler(ableton::Link& link, py::object loop) : m_link(link), m_loop(loop) {
+        start();
+    }
 
     ~Scheduler() { stop(); }
 
@@ -152,16 +154,6 @@ struct Scheduler {
 struct Link : ableton::Link {
     Link(double bpm, py::object loop)
         : ableton::Link(bpm), m_loop(loop), m_scheduler(*this, m_loop) {}
-
-    void enable(bool enable) {
-        ableton::Link::enable(enable);
-
-        if (enable) {
-            m_scheduler.start();
-        } else {
-            m_scheduler.stop();
-        }
-    }
 
     py::object sync(double beat, double offset, double origin) {
         auto future = m_loop.attr("create_future")();
