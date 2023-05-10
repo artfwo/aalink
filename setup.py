@@ -15,15 +15,14 @@ ext = Pybind11Extension(
         "link/include",
         "link/modules/asio-standalone/asio/include",
     ],
-    extra_compile_args=[
-        "-Wno-multichar",
-    ],
 )
 
 if platform.system() == 'Linux':
     ext.extra_compile_args += ["-DLINK_PLATFORM_LINUX"]
+    ext.extra_compile_args += ["-Wno-multichar"]
 elif platform.system() == 'Darwin':
     ext.extra_compile_args += ["-DLINK_PLATFORM_MACOSX"]
+    ext.extra_compile_args += ["-Wno-multichar"]
 elif platform.system() == 'Windows':
     ext.extra_compile_args += ["-DLINK_PLATFORM_WINDOWS"]
 else:
