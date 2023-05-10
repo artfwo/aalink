@@ -3,7 +3,7 @@ import platform
 from pybind11.setup_helpers import Pybind11Extension, build_ext
 from setuptools import setup
 
-__version__ = "0.1"
+__version__ = "0.0.1"
 
 ext = Pybind11Extension(
     "aalink",
@@ -26,6 +26,8 @@ elif platform.system() == 'Darwin':
     ext.extra_compile_args += ["-DLINK_PLATFORM_MACOSX"]
 elif platform.system() == 'Windows':
     ext.extra_compile_args += ["-DLINK_PLATFORM_WINDOWS"]
+else:
+    raise RuntimeError('Unsupported platform: {}'.format(platform.system()))
 
 setup(
     name="aalink",
