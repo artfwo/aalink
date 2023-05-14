@@ -166,7 +166,8 @@ struct Link : ableton::Link {
 };
 
 PYBIND11_MODULE(aalink, m) {
-    py::class_<ableton::Link::Clock>(m, "Clock").def("micros", &ableton::Link::Clock::micros);
+    py::class_<ableton::Link::Clock>(m, "Clock")
+        .def("time", &ableton::Link::Clock::micros);
 
     py::class_<ableton::Link::SessionState>(m, "SessionState")
         .def("tempo", &ableton::Link::SessionState::tempo)
