@@ -172,7 +172,16 @@ PYBIND11_MODULE(aalink, m) {
     py::class_<ableton::Link::SessionState>(m, "SessionState")
         .def("tempo", &ableton::Link::SessionState::tempo)
         .def("set_tempo", &ableton::Link::SessionState::setTempo)
-        .def("is_playing", &ableton::Link::SessionState::isPlaying);
+        .def("beat_at_time", &ableton::Link::SessionState::beatAtTime)
+        .def("phase_at_time", &ableton::Link::SessionState::phaseAtTime)
+        .def("time_at_beat", &ableton::Link::SessionState::timeAtBeat)
+        .def("request_beat_at_time", &ableton::Link::SessionState::requestBeatAtTime)
+        .def("force_beat_at_time", &ableton::Link::SessionState::forceBeatAtTime)
+        .def("set_is_playing", &ableton::Link::SessionState::setIsPlaying)
+        .def("is_playing", &ableton::Link::SessionState::isPlaying)
+        .def("time_for_is_playing", &ableton::Link::SessionState::timeForIsPlaying)
+        .def("request_beat_at_start_playing_time", &ableton::Link::SessionState::requestBeatAtStartPlayingTime)
+        .def("set_is_playing_and_request_beat_at_time", &ableton::Link::SessionState::setIsPlayingAndRequestBeatAtTime);
 
     py::class_<Link>(m, "Link")
         .def(py::init<double, py::object>())
