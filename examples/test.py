@@ -12,7 +12,7 @@ async def main():
     loop = asyncio.get_running_loop()
 
     link = Link(120, loop)
-    link.enable(True)
+    link.enabled = True
 
     asyncio.create_task(bang(link, 'a', 1))
     asyncio.create_task(bang(link, 'b', 2))

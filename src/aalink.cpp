@@ -184,11 +184,13 @@ PYBIND11_MODULE(aalink, m) {
         .def("set_is_playing_and_request_beat_at_time", &ableton::Link::SessionState::setIsPlayingAndRequestBeatAtTime);
 
     py::class_<Link>(m, "Link")
-        .def(py::init<double, py::object>())
-        .def("enable", &Link::enable)
-        .def("clock", &Link::clock)
+        .def(py::init<double, py::object>(), py::arg("bpm"), py::arg("loop"))
+        .def_property("enabled", &Link::isEnabled, &Link::enable)
+        .def_property("start_stop_sync_enabled", &Link::isStartStopSyncEnabled, &Link::enableStartStopSync)
+        .def_property_readonly("clock", &Link::clock)
+        .def_property_readonly("num_peers", &Link::numPeers)
         .def("capture_app_session_state", &Link::captureAppSessionState)
-        .def("commit_app_session_state", &Link::commitAppSessionState)
+        .def("commit_app_session_state", &Link::commitAppSessionState, py::arg("state"))
         .def("sync", &Link::sync, py::arg("beat"), py::arg("offset") = 0, py::arg("origin") = 0);
 
 #ifdef VERSION_INFO

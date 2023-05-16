@@ -37,7 +37,7 @@ passing the asyncio event loop to the constructor, and await for
         loop = asyncio.get_running_loop()
         link = Link(120, loop)
 
-        link.enable(True)
+        link.enabled = True
 
         while True:
             await link.sync(1)
@@ -91,7 +91,7 @@ Combine synced coroutines to run in series or concurrently:
         loop = asyncio.get_running_loop()
         link = Link(120, loop)
 
-        link.enable(True)
+        link.enabled = True
 
         async def sequence(name):
             for i in range(4):
