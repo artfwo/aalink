@@ -10,7 +10,7 @@ async def main():
     link.enabled = True
 
     while True:
-        beat = await link.sync(1)
-        print('bang', name, beat)
+        await link.sync(1)
+        print('bang!')
 
 asyncio.run(main())
