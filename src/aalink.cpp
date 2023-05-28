@@ -84,8 +84,6 @@ struct Scheduler {
                         loop_call_soon_threadsafe(future_set_result, it->link_beat);
                     }
 
-                    py::gil_scoped_release release;
-
                     it = m_events.erase(it);
                 } else {
                     ++it;
