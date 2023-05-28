@@ -3,7 +3,7 @@ import platform
 from pybind11.setup_helpers import Pybind11Extension, build_ext
 from setuptools import setup
 
-__version__ = "0.0.2"
+__version__ = "0.0.3"
 
 ext = Pybind11Extension(
     "aalink",
