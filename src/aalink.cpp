@@ -9,6 +9,8 @@
 
 #include <ableton/Link.hpp>
 
+namespace py = pybind11;
+
 #define STRINGIFY(x) #x
 #define MACRO_STRINGIFY(x) STRINGIFY(x)
 
@@ -28,7 +30,16 @@ static double next_link_beat(double current_beat, double sync_beat, double offse
     return std::max(next_beat, 0.0);
 }
 
-namespace py = pybind11;
+static void set_future_result(py::object future, double link_beat) {
+    py::gil_scoped_acquire acquire;
+
+    bool done = future.attr("done")().cast<bool>();
+
+    if (!done) {
+        auto set_result = future.attr("set_result");
+        set_result(link_beat);
+    }
+}
 
 struct SchedulerSyncEvent {
     py::object future;
@@ -76,13 +87,8 @@ struct Scheduler {
                 if (link_beat > it->link_beat) {
                     py::gil_scoped_acquire acquire;
 
-                    auto future_done = it->future.attr("done")().cast<bool>();
-
-                    if (!future_done) {
-                        auto loop_call_soon_threadsafe = m_loop.attr("call_soon_threadsafe");
-                        auto future_set_result = it->future.attr("set_result");
-                        loop_call_soon_threadsafe(future_set_result, it->link_beat);
-                    }
+                    auto loop_call_soon_threadsafe = m_loop.attr("call_soon_threadsafe");
+                    loop_call_soon_threadsafe(py::cpp_function(&set_future_result), it->future, it->link_beat);
 
                     it = m_events.erase(it);
                 } else {
