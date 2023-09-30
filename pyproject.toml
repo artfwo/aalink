@@ -1,6 +1,29 @@
 [build-system]
-requires = [
-    "setuptools>=42",
-    "pybind11>=2.10.0",
+requires = ["scikit-build-core >=0.4.3"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "aalink"
+version = "0.0.5"
+description = "Async Python interface for Ableton Link"
+readme = "README.rst"
+requires-python = ">=3.8"
+authors = [
+    {name = "Artem Popov", email = "art@artfwo.net"}
 ]
-build-backend = "setuptools.build_meta"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Programming Language :: Python :: 3",
+    "Topic :: Artistic Software",
+    "Topic :: Multimedia :: Sound/Audio",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: System :: Networking",
+]
+
+[project.urls]
+Homepage = "https://github.com/artfwo/aalink"
+
+[tool.cibuildwheel]
+build-verbosity = 1
