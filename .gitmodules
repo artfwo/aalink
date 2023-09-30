@@ -1,3 +1,6 @@
 [submodule "link"]
-	path = link
+	path = ext/link
 	url = https://github.com/Ableton/link.git
+[submodule "ext/nanobind"]
+	path = ext/nanobind
+	url = https://github.com/wjakob/nanobind

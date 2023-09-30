@@ -1,5 +1,5 @@
-#include <pybind11/chrono.h>
-#include <pybind11/pybind11.h>
+#include <nanobind/stl/chrono.h>
+#include <nanobind/nanobind.h>
 
 #include <algorithm>
 #include <chrono>
@@ -9,10 +9,16 @@
 
 #include <ableton/Link.hpp>
 
-namespace py = pybind11;
+namespace nb = nanobind;
 
-#define STRINGIFY(x) #x
-#define MACRO_STRINGIFY(x) STRINGIFY(x)
+struct SchedulerSyncEvent {
+    nb::object future;
+
+    double beat;
+    double offset;
+    double origin;
+    double link_beat;
+};
 
 static double next_link_beat(double current_beat, double sync_beat, double offset, double origin) {
     double next_beat;
@@ -28,10 +34,10 @@ static double next_link_beat(double current_beat, double sync_beat, double offse
     return std::max(next_beat, 0.0);
 }
 
-static void set_future_result(py::object future, double link_beat) {
-    py::gil_scoped_acquire acquire;
+static void set_future_result(nb::object future, double link_beat) {
+    nb::gil_scoped_acquire acquire;
 
-    bool done = future.attr("done")().cast<bool>();
+    bool done = nb::cast<bool>(future.attr("done")());
 
     if (!done) {
         auto set_result = future.attr("set_result");
@@ -39,17 +45,8 @@ static void set_future_result(py::object future, double link_beat) {
     }
 }
 
-struct SchedulerSyncEvent {
-    py::object future;
-
-    double beat;
-    double offset;
-    double origin;
-    double link_beat;
-};
-
 struct Scheduler {
-    Scheduler(ableton::Link& link, py::object loop) : m_link(link), m_loop(loop) {
+    Scheduler(ableton::Link& link, nb::object loop) : m_link(link), m_loop(loop) {
         start();
     }
 
@@ -83,10 +80,10 @@ struct Scheduler {
 
             for (auto it = m_events.begin(); it != m_events.end();) {
                 if (link_beat > it->link_beat) {
-                    py::gil_scoped_acquire acquire;
+                    nb::gil_scoped_acquire acquire;
 
                     auto loop_call_soon_threadsafe = m_loop.attr("call_soon_threadsafe");
-                    loop_call_soon_threadsafe(py::cpp_function(&set_future_result), it->future, it->link_beat);
+                    loop_call_soon_threadsafe(nb::cpp_function(&set_future_result), it->future, it->link_beat);
 
                     it = m_events.erase(it);
                 } else {
@@ -104,9 +101,9 @@ struct Scheduler {
         }
     }
 
-    void schedule_sync(py::object future, double beat, double offset, double origin) {
+    void schedule_sync(nb::object future, double beat, double offset, double origin) {
         // prevent occasional GIL deadlocks when calling link.sync()
-        py::gil_scoped_release release;
+        nb::gil_scoped_release release;
 
         SchedulerSyncEvent event = {
             .future = future,
@@ -151,29 +148,29 @@ struct Scheduler {
     std::atomic<double> m_link_quantum{1};
 
     ableton::Link& m_link;
-    py::object m_loop;
+    nb::object m_loop;
 };
 
-struct Link : ableton::Link {
-    Link(double bpm, py::object loop)
-        : ableton::Link(bpm), m_loop(loop), m_scheduler(*this, m_loop) {}
+struct Link {
+    Link(double bpm, nb::object loop)
+        : m_link(bpm), m_loop(loop), m_scheduler(m_link, m_loop) {}
 
     std::size_t num_peers() {
-        return numPeers();
+        return m_link.numPeers();
     }
 
     double beat() {
-        auto link_state = captureAppSessionState();
-        return link_state.beatAtTime(clock().micros(), m_scheduler.m_link_quantum);
+        auto link_state = m_link.captureAppSessionState();
+        return link_state.beatAtTime(m_link.clock().micros(), m_scheduler.m_link_quantum);
     }
 
     double phase() {
-        auto link_state = captureAppSessionState();
-        return link_state.phaseAtTime(clock().micros(), m_scheduler.m_link_quantum);
+        auto link_state = m_link.captureAppSessionState();
+        return link_state.phaseAtTime(m_link.clock().micros(), m_scheduler.m_link_quantum);
     }
 
     std::chrono::microseconds time() {
-        return clock().micros();
+        return m_link.clock().micros();
     }
 
     double quantum() {
@@ -185,98 +182,93 @@ struct Link : ableton::Link {
     }
 
     bool enabled() {
-        return isEnabled();
+        return m_link.isEnabled();
     }
 
     void set_enabled(bool enabled) {
-        enable(enabled);
+        m_link.enable(enabled);
     }
 
     bool start_stop_sync_enabled() {
-        return isStartStopSyncEnabled();
+        return m_link.isStartStopSyncEnabled();
     }
 
     void set_start_stop_sync_enabled(bool enabled) {
-        enableStartStopSync(enabled);
+        m_link.enableStartStopSync(enabled);
     }
 
     double tempo() {
-        auto link_state = captureAppSessionState();
+        auto link_state = m_link.captureAppSessionState();
         return link_state.tempo();
     }
 
     void set_tempo(double tempo) {
-        auto link_state = captureAppSessionState();
-        link_state.setTempo(tempo, clock().micros());
-        commitAppSessionState(link_state);
+        auto link_state = m_link.captureAppSessionState();
+        link_state.setTempo(tempo, m_link.clock().micros());
+        m_link.commitAppSessionState(link_state);
     }
 
     bool playing() {
-        auto link_state = captureAppSessionState();
+        auto link_state = m_link.captureAppSessionState();
         return link_state.isPlaying();
     }
 
     void set_playing(bool playing) {
-        auto link_state = captureAppSessionState();
-        link_state.setIsPlaying(playing, clock().micros());
-        commitAppSessionState(link_state);
+        auto link_state = m_link.captureAppSessionState();
+        link_state.setIsPlaying(playing, m_link.clock().micros());
+        m_link.commitAppSessionState(link_state);
     }
 
     void request_beat(double beat) {
-        auto link_state = captureAppSessionState();
-        link_state.requestBeatAtTime(beat, clock().micros(), m_scheduler.m_link_quantum);
-        commitAppSessionState(link_state);
+        auto link_state = m_link.captureAppSessionState();
+        link_state.requestBeatAtTime(beat, m_link.clock().micros(), m_scheduler.m_link_quantum);
+        m_link.commitAppSessionState(link_state);
     }
 
     void force_beat(double beat) {
-        auto link_state = captureAppSessionState();
-        link_state.forceBeatAtTime(beat, clock().micros(), m_scheduler.m_link_quantum);
-        commitAppSessionState(link_state);
+        auto link_state = m_link.captureAppSessionState();
+        link_state.forceBeatAtTime(beat, m_link.clock().micros(), m_scheduler.m_link_quantum);
+        m_link.commitAppSessionState(link_state);
     }
 
     void request_beat_at_start_playing_time(double beat) {
-        auto link_state = captureAppSessionState();
+        auto link_state = m_link.captureAppSessionState();
         link_state.requestBeatAtStartPlayingTime(beat, m_scheduler.m_link_quantum);
-        commitAppSessionState(link_state);
+        m_link.commitAppSessionState(link_state);
     }
 
     void set_is_playing_and_request_beat_at_time(bool playing, std::chrono::microseconds time, double beat) {
-        auto link_state = captureAppSessionState();
+        auto link_state = m_link.captureAppSessionState();
         link_state.setIsPlayingAndRequestBeatAtTime(playing, time, beat, m_scheduler.m_link_quantum);
-        commitAppSessionState(link_state);
+        m_link.commitAppSessionState(link_state);
     }
 
-    py::object sync(double beat, double offset, double origin) {
+    nb::object sync(double beat, double offset, double origin) {
         auto future = m_loop.attr("create_future")();
         m_scheduler.schedule_sync(future, beat, offset, origin);
         return future;
     }
 
-    py::object m_loop;
+    ableton::Link m_link;
+    nb::object m_loop;
     Scheduler m_scheduler;
 };
 
-PYBIND11_MODULE(aalink, m) {
-    py::class_<Link>(m, "Link")
-        .def(py::init<double, py::object>(), py::arg("bpm"), py::arg("loop"))
-        .def_property_readonly("num_peers", &Link::num_peers)
-        .def_property_readonly("beat", &Link::beat)
-        .def_property_readonly("phase", &Link::phase)
-        .def_property_readonly("time", &Link::time)
-        .def_property("quantum", &Link::quantum, &Link::set_quantum)
-        .def_property("enabled", &Link::enabled, &Link::set_enabled)
-        .def_property("start_stop_sync_enabled", &Link::start_stop_sync_enabled, &Link::set_start_stop_sync_enabled)
-        .def_property("tempo", &Link::tempo, &Link::set_tempo)
-        .def_property("playing", &Link::playing, &Link::set_playing)
+NB_MODULE(aalink, m) {
+    nb::class_<Link>(m, "Link")
+        .def(nb::init<double, nb::object>(), nb::arg("bpm"), nb::arg("loop"))
+        .def_prop_ro("num_peers", &Link::num_peers)
+        .def_prop_ro("beat", &Link::beat)
+        .def_prop_ro("phase", &Link::phase)
+        .def_prop_ro("time", &Link::time)
+        .def_prop_rw("quantum", &Link::quantum, &Link::set_quantum)
+        .def_prop_rw("enabled", &Link::enabled, &Link::set_enabled)
+        .def_prop_rw("start_stop_sync_enabled", &Link::start_stop_sync_enabled, &Link::set_start_stop_sync_enabled)
+        .def_prop_rw("tempo", &Link::tempo, &Link::set_tempo)
+        .def_prop_rw("playing", &Link::playing, &Link::set_playing)
         .def("request_beat", &Link::request_beat)
         .def("force_beat", &Link::force_beat)
         .def("request_beat_at_start_playing_time", &Link::request_beat_at_start_playing_time)
         .def("set_is_playing_and_request_beat_at_time", &Link::set_is_playing_and_request_beat_at_time)
-        .def("sync", &Link::sync, py::arg("beat"), py::arg("offset") = 0, py::arg("origin") = 0);
-
-#ifdef VERSION_INFO
-    m.attr("__version__") = MACRO_STRINGIFY(VERSION_INFO);
-#else
-    m.attr("__version__") = "dev";
-#endif
+        .def("sync", &Link::sync, nb::arg("beat"), nb::arg("offset") = 0, nb::arg("origin") = 0);
 }

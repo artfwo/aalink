@@ -15,11 +15,17 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Remove libatomic library link on Linux
+        if: contains(matrix.os, 'ubuntu')
+        run: |
+          sed -i '/atomic/d' ext/link/AbletonLinkConfig.cmake
+
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.12.3
         env:
           CIBW_SKIP: pp* *_i686 *-win32
           CIBW_ARCHS_MACOS: x86_64 arm64
+          MACOSX_DEPLOYMENT_TARGET: 10.14
 
       - uses: actions/upload-artifact@v3
         with:

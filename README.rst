@@ -13,7 +13,7 @@ for light and sound control.
 Installation
 ============
 
-aalink requires at least Python 3.7. It can be installed using pip::
+aalink requires at least Python 3.8. It can be installed using pip::
 
     pip3 install aalink
 
@@ -108,8 +108,6 @@ Combine synced coroutines to run in series or concurrently:
 Limitations
 -----------
 
-Start/stop syncing is not implemented yet.
-
 aalink aims to be punctual, but it is not 100% accurate due to the processing
 delay in the internal scheduler and the uncertainty of event loop iterations
 timing.
@@ -133,13 +131,13 @@ aalink is licensed under the GNU General Public License (GPL) version 3.
 You can find the full text of the GPL license in the ``LICENSE`` file included
 in this repository.
 
-aalink includes code from pybind11 and Ableton Link.
+aalink includes code from nanobind and Ableton Link.
 
-`pybind11 <https://pybind11.readthedocs.io/>`_
+`nanobind <https://nanobind.readthedocs.io/>`_
 
-Copyright (c) 2016 Wenzel Jakob <wenzel.jakob@epfl.ch>, All rights reserved.
+Copyright (c) 2022 Wenzel Jakob <wenzel.jakob@epfl.ch>, All rights reserved.
 
-`pybind11 license <https://github.com/pybind/pybind11/blob/master/LICENSE>`_
+`pybind11 license <https://github.com/wjakob/nanobind/blob/master/LICENSE>`_
 
 `Ableton Link <https://ableton.github.io/link/>`_
 
