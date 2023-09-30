@@ -137,7 +137,7 @@ aalink includes code from nanobind and Ableton Link.
 
 Copyright (c) 2022 Wenzel Jakob <wenzel.jakob@epfl.ch>, All rights reserved.
 
-`pybind11 license <https://github.com/wjakob/nanobind/blob/master/LICENSE>`_
+`nanobind license <https://github.com/wjakob/nanobind/blob/master/LICENSE>`_
 
 `Ableton Link <https://ableton.github.io/link/>`_
 
