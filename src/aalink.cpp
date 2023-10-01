@@ -124,16 +124,6 @@ struct Scheduler {
         m_events_mutex.unlock();
     }
 
-    void reset_sync_events() {
-        m_events_mutex.lock();
-
-        for (auto& event : m_events) {
-            event.link_beat = 0;
-        }
-
-        m_events_mutex.unlock();
-    }
-
     void reschedule_sync_events(double link_beat) {
         m_events_mutex.lock();
 
