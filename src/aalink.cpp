@@ -131,6 +131,9 @@ struct Scheduler {
             event.link_beat = next_link_beat(link_beat, event.beat, event.offset, event.origin);
         }
 
+        // update m_link_beat here to ensure that interim sync events will not be scheduled later
+        m_link_beat = link_beat;
+
         m_events_mutex.unlock();
     }
 
