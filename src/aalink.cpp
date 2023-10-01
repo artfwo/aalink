@@ -22,6 +22,12 @@ struct SchedulerSyncEvent {
 
 static double next_link_beat(double current_beat, double sync_beat, double offset, double origin) {
     double next_beat;
+    double i;
+
+    // return current_beat if evenly divisible by sync_beat
+    if (modf(current_beat / sync_beat, &i) == 0) {
+        return current_beat;
+    }
 
     next_beat = floor((current_beat - origin) / sync_beat) + 1.0;
     next_beat = next_beat * sync_beat + origin;
