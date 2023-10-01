@@ -222,24 +222,32 @@ struct Link {
         auto link_state = m_link.captureAppSessionState();
         link_state.requestBeatAtTime(beat, m_link.clock().micros(), m_scheduler.m_link_quantum);
         m_link.commitAppSessionState(link_state);
+
+        m_scheduler.reschedule_sync_events(beat);
     }
 
     void force_beat(double beat) {
         auto link_state = m_link.captureAppSessionState();
         link_state.forceBeatAtTime(beat, m_link.clock().micros(), m_scheduler.m_link_quantum);
         m_link.commitAppSessionState(link_state);
+
+        m_scheduler.reschedule_sync_events(beat);
     }
 
     void request_beat_at_start_playing_time(double beat) {
         auto link_state = m_link.captureAppSessionState();
         link_state.requestBeatAtStartPlayingTime(beat, m_scheduler.m_link_quantum);
         m_link.commitAppSessionState(link_state);
+
+        m_scheduler.reschedule_sync_events(beat);
     }
 
     void set_is_playing_and_request_beat_at_time(bool playing, std::chrono::microseconds time, double beat) {
         auto link_state = m_link.captureAppSessionState();
         link_state.setIsPlayingAndRequestBeatAtTime(playing, time, beat, m_scheduler.m_link_quantum);
         m_link.commitAppSessionState(link_state);
+
+        m_scheduler.reschedule_sync_events(beat);
     }
 
     nb::object sync(double beat, double offset, double origin) {
