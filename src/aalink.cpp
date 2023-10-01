@@ -250,6 +250,42 @@ struct Link {
         m_scheduler.reschedule_sync_events(beat);
     }
 
+    void set_num_peers_callback(nb::callable callback) {
+        m_link.setNumPeersCallback([this, callback](std::size_t num_peers) {
+            // ensure the callback isn't called when the runtime is finalizing
+            if (!_Py_IsFinalizing()) {
+                nb::gil_scoped_acquire acquire;
+
+                auto loop_call_soon_threadsafe = this->m_loop.attr("call_soon_threadsafe");
+                loop_call_soon_threadsafe(callback, num_peers);
+            }
+        });
+    }
+
+    void set_tempo_callback(nb::callable callback) {
+        m_link.setTempoCallback([this, callback](double tempo) {
+            // ensure the callback isn't called when the runtime is finalizing
+            if (!_Py_IsFinalizing()) {
+                nb::gil_scoped_acquire acquire;
+
+                auto loop_call_soon_threadsafe = this->m_loop.attr("call_soon_threadsafe");
+                loop_call_soon_threadsafe(callback, tempo);
+            }
+        });
+    }
+
+    void set_start_stop_callback(nb::callable callback) {
+        m_link.setStartStopCallback([this, callback](bool playing) {
+            // ensure the callback isn't called when the runtime is finalizing
+            if (!_Py_IsFinalizing()) {
+                nb::gil_scoped_acquire acquire;
+
+                auto loop_call_soon_threadsafe = this->m_loop.attr("call_soon_threadsafe");
+                loop_call_soon_threadsafe(callback, playing);
+            }
+        });
+    }
+
     nb::object sync(double beat, double offset, double origin) {
         auto future = m_loop.attr("create_future")();
         m_scheduler.schedule_sync(future, beat, offset, origin);
@@ -277,5 +313,8 @@ NB_MODULE(aalink, m) {
         .def("force_beat", &Link::force_beat)
         .def("request_beat_at_start_playing_time", &Link::request_beat_at_start_playing_time)
         .def("set_is_playing_and_request_beat_at_time", &Link::set_is_playing_and_request_beat_at_time)
+        .def("set_num_peers_callback", &Link::set_num_peers_callback)
+        .def("set_tempo_callback", &Link::set_tempo_callback)
+        .def("set_start_stop_callback", &Link::set_start_stop_callback)
         .def("sync", &Link::sync, nb::arg("beat"), nb::arg("offset") = 0, nb::arg("origin") = 0);
 }
