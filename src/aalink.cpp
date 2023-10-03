@@ -88,8 +88,12 @@ struct Scheduler {
                 if (link_beat > it->link_beat) {
                     nb::gil_scoped_acquire acquire;
 
-                    auto loop_call_soon_threadsafe = m_loop.attr("call_soon_threadsafe");
-                    loop_call_soon_threadsafe(nb::cpp_function(&set_future_result), it->future, it->link_beat);
+                    bool loop_is_running = nb::cast<bool>(m_loop.attr("is_running")());
+
+                    if (loop_is_running) {
+                        auto loop_call_soon_threadsafe = m_loop.attr("call_soon_threadsafe");
+                        loop_call_soon_threadsafe(nb::cpp_function(&set_future_result), it->future, it->link_beat);
+                    }
 
                     it = m_events.erase(it);
                 } else {
