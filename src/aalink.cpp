@@ -108,9 +108,6 @@ struct Scheduler {
     }
 
     void schedule_sync(nb::object future, double beat, double offset, double origin) {
-        // prevent occasional GIL deadlocks when calling link.sync()
-        nb::gil_scoped_release release;
-
         SchedulerSyncEvent event = {
             .future = future,
             .beat = beat,
@@ -118,6 +115,9 @@ struct Scheduler {
             .origin = origin,
             .link_beat = next_link_beat(m_link_beat, beat, offset, origin),
         };
+
+        // prevent occasional GIL deadlocks when calling link.sync()
+        nb::gil_scoped_release release;
 
         m_events_mutex.lock();
         m_events.push_back(std::move(event));
