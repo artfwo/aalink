@@ -131,13 +131,13 @@ aalink is licensed under the GNU General Public License (GPL) version 3.
 You can find the full text of the GPL license in the ``LICENSE`` file included
 in this repository.
 
-aalink includes code from nanobind and Ableton Link.
+aalink includes code from pybind11 and Ableton Link.
 
-`nanobind <https://nanobind.readthedocs.io/>`_
+`pybind11 <https://pybind11.readthedocs.io/>`_
 
-Copyright (c) 2022 Wenzel Jakob <wenzel.jakob@epfl.ch>, All rights reserved.
+Copyright (c) 2016 Wenzel Jakob <wenzel.jakob@epfl.ch>, All rights reserved.
 
-`nanobind license <https://github.com/wjakob/nanobind/blob/master/LICENSE>`_
+`pybind11 license <https://github.com/pybind/pybind11/blob/master/LICENSE>`_
 
 `Ableton Link <https://ableton.github.io/link/>`_
 
