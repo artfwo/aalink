@@ -11,8 +11,8 @@ endif()
 
 set(CMAKE_CXX_STANDARD 20)
 
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/ext/nanobind)
-nanobind_add_module(aalink src/aalink.cpp)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/ext/pybind11)
+pybind11_add_module(aalink src/aalink.cpp)
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/ext/link/AbletonLinkConfig.cmake)
 target_link_libraries(aalink PUBLIC Ableton::Link)

@@ -1,5 +1,5 @@
-#include <nanobind/stl/chrono.h>
-#include <nanobind/nanobind.h>
+#include <pybind11/chrono.h>
+#include <pybind11/pybind11.h>
 
 #include <algorithm>
 #include <chrono>
@@ -9,10 +9,10 @@
 
 #include <ableton/Link.hpp>
 
-namespace nb = nanobind;
+namespace py = pybind11;
 
 struct SchedulerSyncEvent {
-    nb::object future;
+    py::object future;
 
     double beat;
     double offset;
@@ -40,10 +40,10 @@ static double next_link_beat(double current_beat, double sync_beat, double offse
     return std::max(next_beat, 0.0);
 }
 
-static void set_future_result(nb::object future, double link_beat) {
-    nb::gil_scoped_acquire acquire;
+static void set_future_result(py::object future, double link_beat) {
+    py::gil_scoped_acquire acquire;
 
-    bool done = nb::cast<bool>(future.attr("done")());
+    bool done = py::cast<bool>(future.attr("done")());
 
     if (!done) {
         auto set_result = future.attr("set_result");
@@ -52,7 +52,7 @@ static void set_future_result(nb::object future, double link_beat) {
 }
 
 struct Scheduler {
-    Scheduler(ableton::Link& link, nb::object loop) : m_link(link), m_loop(loop) {
+    Scheduler(ableton::Link& link, py::object loop) : m_link(link), m_loop(loop) {
         start();
     }
 
@@ -86,13 +86,13 @@ struct Scheduler {
 
             for (auto it = m_events.begin(); it != m_events.end();) {
                 if (link_beat > it->link_beat) {
-                    nb::gil_scoped_acquire acquire;
+                    py::gil_scoped_acquire acquire;
 
-                    bool loop_is_running = nb::cast<bool>(m_loop.attr("is_running")());
+                    bool loop_is_running = py::cast<bool>(m_loop.attr("is_running")());
 
                     if (loop_is_running) {
                         auto loop_call_soon_threadsafe = m_loop.attr("call_soon_threadsafe");
-                        loop_call_soon_threadsafe(nb::cpp_function(&set_future_result), it->future, it->link_beat);
+                        loop_call_soon_threadsafe(py::cpp_function(&set_future_result), it->future, it->link_beat);
                     }
 
                     it = m_events.erase(it);
@@ -111,7 +111,7 @@ struct Scheduler {
         }
     }
 
-    void schedule_sync(nb::object future, double beat, double offset, double origin) {
+    void schedule_sync(py::object future, double beat, double offset, double origin) {
         SchedulerSyncEvent event = {
             .future = future,
             .beat = beat,
@@ -121,7 +121,7 @@ struct Scheduler {
         };
 
         // prevent occasional GIL deadlocks when calling link.sync()
-        nb::gil_scoped_release release;
+        py::gil_scoped_release release;
 
         m_events_mutex.lock();
         m_events.push_back(std::move(event));
@@ -151,11 +151,11 @@ struct Scheduler {
     std::atomic<double> m_link_quantum{1};
 
     ableton::Link& m_link;
-    nb::object m_loop;
+    py::object m_loop;
 };
 
 struct Link {
-    Link(double bpm, nb::object loop)
+    Link(double bpm, py::object loop)
         : m_link(bpm), m_loop(loop), m_scheduler(m_link, m_loop) {}
 
     std::size_t num_peers() {
@@ -254,11 +254,11 @@ struct Link {
         m_scheduler.reschedule_sync_events(beat);
     }
 
-    void set_num_peers_callback(nb::callable callback) {
+    void set_num_peers_callback(py::function callback) {
         m_link.setNumPeersCallback([this, callback](std::size_t num_peers) {
             // ensure the callback isn't called when the runtime is finalizing
             if (!_Py_IsFinalizing()) {
-                nb::gil_scoped_acquire acquire;
+                py::gil_scoped_acquire acquire;
 
                 auto loop_call_soon_threadsafe = this->m_loop.attr("call_soon_threadsafe");
                 loop_call_soon_threadsafe(callback, num_peers);
@@ -266,11 +266,11 @@ struct Link {
         });
     }
 
-    void set_tempo_callback(nb::callable callback) {
+    void set_tempo_callback(py::function callback) {
         m_link.setTempoCallback([this, callback](double tempo) {
             // ensure the callback isn't called when the runtime is finalizing
             if (!_Py_IsFinalizing()) {
-                nb::gil_scoped_acquire acquire;
+                py::gil_scoped_acquire acquire;
 
                 auto loop_call_soon_threadsafe = this->m_loop.attr("call_soon_threadsafe");
                 loop_call_soon_threadsafe(callback, tempo);
@@ -278,11 +278,11 @@ struct Link {
         });
     }
 
-    void set_start_stop_callback(nb::callable callback) {
+    void set_start_stop_callback(py::function callback) {
         m_link.setStartStopCallback([this, callback](bool playing) {
             // ensure the callback isn't called when the runtime is finalizing
             if (!_Py_IsFinalizing()) {
-                nb::gil_scoped_acquire acquire;
+                py::gil_scoped_acquire acquire;
 
                 auto loop_call_soon_threadsafe = this->m_loop.attr("call_soon_threadsafe");
                 loop_call_soon_threadsafe(callback, playing);
@@ -290,29 +290,29 @@ struct Link {
         });
     }
 
-    nb::object sync(double beat, double offset, double origin) {
+    py::object sync(double beat, double offset, double origin) {
         auto future = m_loop.attr("create_future")();
         m_scheduler.schedule_sync(future, beat, offset, origin);
         return future;
     }
 
     ableton::Link m_link;
-    nb::object m_loop;
+    py::object m_loop;
     Scheduler m_scheduler;
 };
 
-NB_MODULE(aalink, m) {
-    nb::class_<Link>(m, "Link")
-        .def(nb::init<double, nb::object>(), nb::arg("bpm"), nb::arg("loop"))
-        .def_prop_ro("num_peers", &Link::num_peers)
-        .def_prop_ro("beat", &Link::beat)
-        .def_prop_ro("phase", &Link::phase)
-        .def_prop_ro("time", &Link::time)
-        .def_prop_rw("quantum", &Link::quantum, &Link::set_quantum)
-        .def_prop_rw("enabled", &Link::enabled, &Link::set_enabled)
-        .def_prop_rw("start_stop_sync_enabled", &Link::start_stop_sync_enabled, &Link::set_start_stop_sync_enabled)
-        .def_prop_rw("tempo", &Link::tempo, &Link::set_tempo)
-        .def_prop_rw("playing", &Link::playing, &Link::set_playing)
+PYBIND11_MODULE(aalink, m) {
+    py::class_<Link>(m, "Link")
+        .def(py::init<double, py::object>(), py::arg("bpm"), py::arg("loop"))
+        .def_property_readonly("num_peers", &Link::num_peers)
+        .def_property_readonly("beat", &Link::beat)
+        .def_property_readonly("phase", &Link::phase)
+        .def_property_readonly("time", &Link::time)
+        .def_property("quantum", &Link::quantum, &Link::set_quantum)
+        .def_property("enabled", &Link::enabled, &Link::set_enabled)
+        .def_property("start_stop_sync_enabled", &Link::start_stop_sync_enabled, &Link::set_start_stop_sync_enabled)
+        .def_property("tempo", &Link::tempo, &Link::set_tempo)
+        .def_property("playing", &Link::playing, &Link::set_playing)
         .def("request_beat", &Link::request_beat)
         .def("force_beat", &Link::force_beat)
         .def("request_beat_at_start_playing_time", &Link::request_beat_at_start_playing_time)
@@ -320,5 +320,5 @@ NB_MODULE(aalink, m) {
         .def("set_num_peers_callback", &Link::set_num_peers_callback)
         .def("set_tempo_callback", &Link::set_tempo_callback)
         .def("set_start_stop_callback", &Link::set_start_stop_callback)
-        .def("sync", &Link::sync, nb::arg("beat"), nb::arg("offset") = 0, nb::arg("origin") = 0);
+        .def("sync", &Link::sync, py::arg("beat"), py::arg("offset") = 0, py::arg("origin") = 0);
 }
