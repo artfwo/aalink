@@ -14,14 +14,7 @@ jobs:
       - uses: actions/checkout@v3
         with:
           submodules: recursive
-
-      # Ajouter des étapes spécifiques pour Android
-      - name: Setup Android NDK
-        if: matrix.os == 'android-arm64'
-        uses: actions/setup-android@v1
-        with:
-          ndk-version: '21.3.6528147'
-
+          
       # Reste des étapes ici...
       # Assurez-vous d'ajouter des conditions pour exécuter les étapes uniquement sur les plateformes appropriées
 
