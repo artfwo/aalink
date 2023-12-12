@@ -11,29 +11,22 @@ jobs:
         os: [ubuntu-20.04]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v3
         with:
           submodules: recursive
 
       - name: Remove libatomic library link on Linux
         if: contains(matrix.os, 'ubuntu')
         run: |
-          sed -i '/atomic/d' ext/link/AbletonLinkConfig.cma
-      
-      - name: Set up QEMU
-        if: runner.os == 'Linux'
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: all
-      
+          sed -i '/atomic/d' ext/link/AbletonLinkConfig.cmake
+
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.16
         env:
           CIBW_SKIP: pp* *_i686 *-win32
-          CIBW_ARCHS_LINUX: auto aarch64
           CIBW_ARCHS_MACOS: x86_64 arm64
+          CIBW_ARCHS_LINUX: x86_64 aarch64
           MACOSX_DEPLOYMENT_TARGET: 10.14
-          # Ajouter les variables d'environnement nécessaires pour Android
 
       - uses: actions/upload-artifact@v3
         with:
