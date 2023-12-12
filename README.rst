@@ -5,10 +5,9 @@ aalink
 aalink is a Python wrapper for Ableton Link built for interactive applications
 using asyncio event loops.
 
-It provides awaitable objects for synchronizing Python code with other peers
-in an Ableton Link session, but it may also be used for writing fully
-standalone scripts with tempo/beat synchronization, such as applications
-for light and sound control.
+It provides a simple programming interface for writing concurrent Python code
+synchronized to a beat. The beat can optionally be time-aligned with other
+peers in an Ableton Link session.
 
 Installation
 ============
