@@ -14,13 +14,18 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-          
+
+      - name: Remove libatomic library link on Linux
+        if: contains(matrix.os, 'ubuntu')
+        run: |
+          sed -i '/atomic/d' ext/link/AbletonLinkConfig.cma
+      
       - name: Set up QEMU
         if: runner.os == 'Linux'
         uses: docker/setup-qemu-action@v3
         with:
           platforms: all
-
+      
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.16
         env:
