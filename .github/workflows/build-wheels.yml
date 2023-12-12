@@ -8,22 +8,25 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [android-arm64]
+        os: [ubuntu-20.04]
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
           
-      # Reste des étapes ici...
-      # Assurez-vous d'ajouter des conditions pour exécuter les étapes uniquement sur les plateformes appropriées
+      - name: Set up QEMU
+        if: runner.os == 'Linux'
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: all
 
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.16
         env:
           CIBW_SKIP: pp* *_i686 *-win32
+          CIBW_ARCHS_LINUX: auto aarch64
           CIBW_ARCHS_MACOS: x86_64 arm64
-          CIBW_ARCHS_ANDROID: arm64
           MACOSX_DEPLOYMENT_TARGET: 10.14
           # Ajouter les variables d'environnement nécessaires pour Android
 
