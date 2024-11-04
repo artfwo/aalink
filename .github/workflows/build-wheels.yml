@@ -21,7 +21,7 @@ jobs:
           sed -i '/atomic/d' ext/link/AbletonLinkConfig.cmake
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.16
+        uses: pypa/cibuildwheel@v2.21
         env:
           CIBW_SKIP: pp* *_i686 *-win32
           CIBW_ARCHS_MACOS: x86_64 arm64
