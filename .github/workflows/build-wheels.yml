@@ -25,8 +25,8 @@ jobs:
         env:
           CIBW_SKIP: pp* *_i686 *-win32
           CIBW_ARCHS_MACOS: x86_64 arm64
-          MACOSX_DEPLOYMENT_TARGET: 10.14
+          MACOSX_DEPLOYMENT_TARGET: 11.0
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           path: ./wheelhouse/*.whl
