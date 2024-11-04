@@ -257,7 +257,11 @@ struct Link {
     void set_num_peers_callback(py::function callback) {
         m_link.setNumPeersCallback([this, callback](std::size_t num_peers) {
             // ensure the callback isn't called when the runtime is finalizing
+            #if PY_VERSION_HEX < 0x30d0000
             if (!_Py_IsFinalizing()) {
+            #else
+            if (!Py_IsFinalizing()) {
+            #endif
                 py::gil_scoped_acquire acquire;
 
                 auto loop_call_soon_threadsafe = this->m_loop.attr("call_soon_threadsafe");
@@ -269,7 +273,11 @@ struct Link {
     void set_tempo_callback(py::function callback) {
         m_link.setTempoCallback([this, callback](double tempo) {
             // ensure the callback isn't called when the runtime is finalizing
+            #if PY_VERSION_HEX < 0x30d0000
             if (!_Py_IsFinalizing()) {
+            #else
+            if (!Py_IsFinalizing()) {
+            #endif
                 py::gil_scoped_acquire acquire;
 
                 auto loop_call_soon_threadsafe = this->m_loop.attr("call_soon_threadsafe");
@@ -281,7 +289,11 @@ struct Link {
     void set_start_stop_callback(py::function callback) {
         m_link.setStartStopCallback([this, callback](bool playing) {
             // ensure the callback isn't called when the runtime is finalizing
+            #if PY_VERSION_HEX < 0x30d0000
             if (!_Py_IsFinalizing()) {
+            #else
+            if (!Py_IsFinalizing()) {
+            #endif
                 py::gil_scoped_acquire acquire;
 
                 auto loop_call_soon_threadsafe = this->m_loop.attr("call_soon_threadsafe");
