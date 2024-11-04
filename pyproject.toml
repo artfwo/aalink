@@ -4,7 +4,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "aalink"
-version = "0.0.6"
+version = "0.0.7"
 description = "Async Python interface for Ableton Link"
 readme = "README.rst"
 requires-python = ">=3.8"
