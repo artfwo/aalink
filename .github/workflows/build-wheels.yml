@@ -8,20 +8,15 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-20.04, windows-2019, macos-13]
+        os: [ubuntu-24.04, ubuntu-24.04-arm, windows-2019, macos-13]
 
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Remove libatomic library link on Linux
-        if: contains(matrix.os, 'ubuntu')
-        run: |
-          sed -i '/atomic/d' ext/link/AbletonLinkConfig.cmake
-
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.21
+        uses: pypa/cibuildwheel@v2.23
         env:
           CIBW_SKIP: pp* *_i686 *-win32
           CIBW_ARCHS_MACOS: x86_64 arm64
