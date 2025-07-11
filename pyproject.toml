@@ -7,7 +7,7 @@ name = "aalink"
 version = "0.0.7"
 description = "Async Python interface for Ableton Link"
 readme = "README.rst"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 authors = [
     {name = "Artem Popov", email = "art@artfwo.net"}
 ]

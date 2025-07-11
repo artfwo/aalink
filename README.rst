@@ -12,7 +12,7 @@ peers in an Ableton Link session.
 Installation
 ============
 
-aalink requires at least Python 3.8. It can be installed using pip::
+aalink requires at least Python 3.9. It can be installed using pip::
 
     pip3 install aalink
 

@@ -25,8 +25,7 @@ async def main():
     link.set_start_stop_callback(on_start_stop)
 
     while True:
-        b = await link.sync(1)
-        if link.playing:
-            print('bang!', b)
+        b = await asyncio.sleep(0.5)
+        print('bang', link.beat, link.playing)
 
 asyncio.run(main())
