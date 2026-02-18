@@ -67,8 +67,8 @@ Non-integral beat syncing is supported. For example:
     await link.sync(Fraction(1/2)) # works too
 
 Sync events can be scheduled with an offset (also expressed in beats) by
-passing an ``offset`` argument to ``sync()``. Use this to add groove to the
-coroutine rhythm.
+passing an ``offset`` argument to ``sync()``. Offset can be either positive
+or negative. Use this to add groove to the coroutine rhythm.
 
 .. code-block:: python
 
