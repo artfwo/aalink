@@ -63,6 +63,9 @@ Non-integral beat syncing is supported. For example:
     await link.sync(1/2) # resumes at beats 0.5, 1, 1.5...
     await link.sync(3/2) # resumes at beats 1.5, 3, 4.5...
 
+    from fractions import Fraction
+    await link.sync(Fraction(1/2)) # works too
+
 Sync events can be scheduled with an offset (also expressed in beats) by
 passing an ``offset`` argument to ``sync()``. Use this to add groove to the
 coroutine rhythm.
