@@ -23,8 +23,7 @@ Usage
 =====
 
 aalink uses asyncio. To connect to a Link session, create a ``Link`` object,
-passing the asyncio event loop to the constructor, and await for
-``Link.sync()`` as follows:
+and await for ``Link.sync()`` as follows:
 
 .. code-block:: python
 
@@ -33,9 +32,7 @@ passing the asyncio event loop to the constructor, and await for
     from aalink import Link
 
     async def main():
-        loop = asyncio.get_running_loop()
-
-        link = Link(120, loop)
+        link = Link(120)
         link.enabled = True
 
         while True:
@@ -90,9 +87,7 @@ Combine synced coroutines to run in series or concurrently:
     from aalink import Link
 
     async def main():
-        loop = asyncio.get_running_loop()
-
-        link = Link(120, loop)
+        link = Link(120)
         link.enabled = True
 
         async def sequence(name):

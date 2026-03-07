@@ -1,10 +1,12 @@
 #include <pybind11/chrono.h>
 #include <pybind11/pybind11.h>
+#include <pybind11/warnings.h>
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <list>
+#include <memory>
 #include <thread>
 
 #include <ableton/Link.hpp>
@@ -56,7 +58,9 @@ struct Scheduler {
         start();
     }
 
-    ~Scheduler() { stop(); }
+    ~Scheduler() {
+        stop();
+    }
 
     void start() {
         m_stop_thread = false;
@@ -155,8 +159,16 @@ struct Scheduler {
 };
 
 struct Link {
-    Link(double bpm, py::object loop)
-        : m_link(bpm), m_loop(loop), m_scheduler(m_link, m_loop) {}
+    Link(double bpm, py::object loop = py::none()) : m_link(bpm), m_loop(loop) {
+        if (m_loop.is_none()) {
+            m_loop = py::module_::import("asyncio").attr("get_running_loop")();
+        } else {
+            py::warnings::warn("The 'loop' parameter is deprecated and will be removed in future versions of aalink",
+               PyExc_DeprecationWarning, 1);
+        }
+
+        m_scheduler = std::make_unique<Scheduler>(m_link, m_loop);
+    }
 
     std::size_t num_peers() {
         return m_link.numPeers();
@@ -164,12 +176,12 @@ struct Link {
 
     double beat() {
         auto link_state = m_link.captureAppSessionState();
-        return link_state.beatAtTime(m_link.clock().micros(), m_scheduler.m_link_quantum);
+        return link_state.beatAtTime(m_link.clock().micros(), m_scheduler->m_link_quantum);
     }
 
     double phase() {
         auto link_state = m_link.captureAppSessionState();
-        return link_state.phaseAtTime(m_link.clock().micros(), m_scheduler.m_link_quantum);
+        return link_state.phaseAtTime(m_link.clock().micros(), m_scheduler->m_link_quantum);
     }
 
     std::chrono::microseconds time() {
@@ -177,11 +189,11 @@ struct Link {
     }
 
     double quantum() {
-        return m_scheduler.m_link_quantum;
+        return m_scheduler->m_link_quantum;
     }
 
     void set_quantum(double quantum) {
-        m_scheduler.m_link_quantum = quantum;
+        m_scheduler->m_link_quantum = quantum;
     }
 
     bool enabled() {
@@ -224,34 +236,34 @@ struct Link {
 
     void request_beat(double beat) {
         auto link_state = m_link.captureAppSessionState();
-        link_state.requestBeatAtTime(beat, m_link.clock().micros(), m_scheduler.m_link_quantum);
+        link_state.requestBeatAtTime(beat, m_link.clock().micros(), m_scheduler->m_link_quantum);
         m_link.commitAppSessionState(link_state);
 
-        m_scheduler.reschedule_sync_events(beat);
+        m_scheduler->reschedule_sync_events(beat);
     }
 
     void force_beat(double beat) {
         auto link_state = m_link.captureAppSessionState();
-        link_state.forceBeatAtTime(beat, m_link.clock().micros(), m_scheduler.m_link_quantum);
+        link_state.forceBeatAtTime(beat, m_link.clock().micros(), m_scheduler->m_link_quantum);
         m_link.commitAppSessionState(link_state);
 
-        m_scheduler.reschedule_sync_events(beat);
+        m_scheduler->reschedule_sync_events(beat);
     }
 
     void request_beat_at_start_playing_time(double beat) {
         auto link_state = m_link.captureAppSessionState();
-        link_state.requestBeatAtStartPlayingTime(beat, m_scheduler.m_link_quantum);
+        link_state.requestBeatAtStartPlayingTime(beat, m_scheduler->m_link_quantum);
         m_link.commitAppSessionState(link_state);
 
-        m_scheduler.reschedule_sync_events(beat);
+        m_scheduler->reschedule_sync_events(beat);
     }
 
     void set_is_playing_and_request_beat_at_time(bool playing, std::chrono::microseconds time, double beat) {
         auto link_state = m_link.captureAppSessionState();
-        link_state.setIsPlayingAndRequestBeatAtTime(playing, time, beat, m_scheduler.m_link_quantum);
+        link_state.setIsPlayingAndRequestBeatAtTime(playing, time, beat, m_scheduler->m_link_quantum);
         m_link.commitAppSessionState(link_state);
 
-        m_scheduler.reschedule_sync_events(beat);
+        m_scheduler->reschedule_sync_events(beat);
     }
 
     void set_num_peers_callback(py::function callback) {
@@ -304,18 +316,18 @@ struct Link {
 
     py::object sync(double beat, double offset, double origin) {
         auto future = m_loop.attr("create_future")();
-        m_scheduler.schedule_sync(future, beat, offset, origin);
+        m_scheduler->schedule_sync(future, beat, offset, origin);
         return future;
     }
 
     ableton::Link m_link;
     py::object m_loop;
-    Scheduler m_scheduler;
+    std::unique_ptr<Scheduler> m_scheduler;
 };
 
 PYBIND11_MODULE(aalink, m) {
     py::class_<Link>(m, "Link")
-        .def(py::init<double, py::object>(), py::arg("bpm"), py::arg("loop"))
+        .def(py::init<double, py::object>(), py::arg("bpm"), py::arg("loop") = py::none())
         .def_property_readonly("num_peers", &Link::num_peers)
         .def_property_readonly("beat", &Link::beat)
         .def_property_readonly("phase", &Link::phase)
