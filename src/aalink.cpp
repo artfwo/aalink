@@ -55,21 +55,21 @@ static void set_future_result(py::object future, double link_beat) {
 
 struct Scheduler {
     Scheduler(ableton::Link& link, py::object loop) : m_link(link), m_loop(loop) {
-        start();
-    }
-
-    ~Scheduler() {
-        stop();
-    }
-
-    void start() {
-        m_stop_thread = false;
         m_thread = std::thread(&Scheduler::run, this);
     }
 
-    void stop() {
-        if (m_thread.joinable()) {
-            m_stop_thread = true;
+    ~Scheduler() {
+        m_stop_thread.store(true, std::memory_order_relaxed);
+
+        // workaround for a rare deadlock during interpreter shutdown: the scheduler
+        // thread may be blocked on GIL while jthread's destructor waits in join()
+        #if PY_VERSION_HEX < 0x30d0000
+        if (_Py_IsFinalizing()) {
+        #else
+        if (Py_IsFinalizing()) {
+        #endif
+            m_thread.detach();
+        } else {
             m_thread.join();
         }
     }
@@ -77,14 +77,15 @@ struct Scheduler {
     void run() {
         using namespace std::chrono_literals;
 
-        while (true) {
+        while (!m_stop_thread.load(std::memory_order_relaxed)) {
             auto link_state = m_link.captureAppSessionState();
 
             auto link_time = m_link.clock().micros();
-            auto link_beat = link_state.beatAtTime(link_time, m_link_quantum);
+            auto link_quantum = m_link_quantum.load(std::memory_order_relaxed);
+            auto link_beat = link_state.beatAtTime(link_time, link_quantum);
 
-            m_link_beat = link_beat;
-            m_link_time = link_time.count() / 1e6;
+            m_link_beat.store(link_beat, std::memory_order_relaxed);
+            m_link_time.store(link_time.count() / 1e6, std::memory_order_relaxed);
 
             m_events_mutex.lock();
 
@@ -107,24 +108,23 @@ struct Scheduler {
 
             m_events_mutex.unlock();
 
-            if (m_stop_thread) {
-                break;
-            }
-
             std::this_thread::sleep_for(1ms);
         }
     }
 
     void schedule_sync(py::object future, double beat, double offset, double origin) {
+        auto link_beat = m_link_beat.load(std::memory_order_relaxed);
+
         SchedulerSyncEvent event = {
             .future = future,
             .beat = beat,
             .offset = offset,
             .origin = origin,
-            .link_beat = next_link_beat(m_link_beat, beat, offset, origin),
+            .link_beat = next_link_beat(link_beat, beat, offset, origin),
         };
 
-        // prevent occasional GIL deadlocks when calling link.sync()
+        // prevent occasional deadlocks when the scheduler thread locks
+        // m_events_mutex first and then acquires the GIL to dispatch callbacks
         py::gil_scoped_release release;
 
         m_events_mutex.lock();
@@ -133,6 +133,10 @@ struct Scheduler {
     }
 
     void reschedule_sync_events(double link_beat) {
+        // prevent occasional deadlocks when the scheduler thread locks
+        // m_events_mutex first and then acquires the GIL to dispatch callbacks
+        py::gil_scoped_release release;
+
         m_events_mutex.lock();
 
         for (auto& event : m_events) {
@@ -140,7 +144,7 @@ struct Scheduler {
         }
 
         // update m_link_beat here to ensure that interim sync events will not be scheduled later
-        m_link_beat = link_beat;
+        m_link_beat.store(link_beat, std::memory_order_relaxed);
 
         m_events_mutex.unlock();
     }
@@ -176,12 +180,13 @@ struct Link {
 
     double beat() {
         auto link_state = m_link.captureAppSessionState();
-        return link_state.beatAtTime(m_link.clock().micros(), m_scheduler->m_link_quantum);
+        auto link_quantum = m_scheduler->m_link_quantum.load(std::memory_order_relaxed);
+        return link_state.beatAtTime(m_link.clock().micros(), link_quantum);
     }
 
     double phase() {
         auto link_state = m_link.captureAppSessionState();
-        return link_state.phaseAtTime(m_link.clock().micros(), m_scheduler->m_link_quantum);
+        return link_state.phaseAtTime(m_link.clock().micros(), m_scheduler->m_link_quantum.load(std::memory_order_relaxed));
     }
 
     std::chrono::microseconds time() {
@@ -189,11 +194,11 @@ struct Link {
     }
 
     double quantum() {
-        return m_scheduler->m_link_quantum;
+        return m_scheduler->m_link_quantum.load(std::memory_order_relaxed);
     }
 
     void set_quantum(double quantum) {
-        m_scheduler->m_link_quantum = quantum;
+        m_scheduler->m_link_quantum.store(quantum, std::memory_order_relaxed);
     }
 
     bool enabled() {
@@ -236,7 +241,8 @@ struct Link {
 
     void request_beat(double beat) {
         auto link_state = m_link.captureAppSessionState();
-        link_state.requestBeatAtTime(beat, m_link.clock().micros(), m_scheduler->m_link_quantum);
+        auto link_quantum = m_scheduler->m_link_quantum.load(std::memory_order_relaxed);
+        link_state.requestBeatAtTime(beat, m_link.clock().micros(), link_quantum);
         m_link.commitAppSessionState(link_state);
 
         m_scheduler->reschedule_sync_events(beat);
@@ -244,7 +250,8 @@ struct Link {
 
     void force_beat(double beat) {
         auto link_state = m_link.captureAppSessionState();
-        link_state.forceBeatAtTime(beat, m_link.clock().micros(), m_scheduler->m_link_quantum);
+        auto link_quantum = m_scheduler->m_link_quantum.load(std::memory_order_relaxed);
+        link_state.forceBeatAtTime(beat, m_link.clock().micros(), link_quantum);
         m_link.commitAppSessionState(link_state);
 
         m_scheduler->reschedule_sync_events(beat);
@@ -252,7 +259,8 @@ struct Link {
 
     void request_beat_at_start_playing_time(double beat) {
         auto link_state = m_link.captureAppSessionState();
-        link_state.requestBeatAtStartPlayingTime(beat, m_scheduler->m_link_quantum);
+        auto link_quantum = m_scheduler->m_link_quantum.load(std::memory_order_relaxed);
+        link_state.requestBeatAtStartPlayingTime(beat, link_quantum);
         m_link.commitAppSessionState(link_state);
 
         m_scheduler->reschedule_sync_events(beat);
@@ -260,7 +268,8 @@ struct Link {
 
     void set_is_playing_and_request_beat_at_time(bool playing, std::chrono::microseconds time, double beat) {
         auto link_state = m_link.captureAppSessionState();
-        link_state.setIsPlayingAndRequestBeatAtTime(playing, time, beat, m_scheduler->m_link_quantum);
+        auto link_quantum = m_scheduler->m_link_quantum.load(std::memory_order_relaxed);
+        link_state.setIsPlayingAndRequestBeatAtTime(playing, time, beat, link_quantum);
         m_link.commitAppSessionState(link_state);
 
         m_scheduler->reschedule_sync_events(beat);
