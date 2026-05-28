@@ -78,6 +78,16 @@ struct Scheduler {
         using namespace std::chrono_literals;
 
         while (!m_stop_thread.load(std::memory_order_relaxed)) {
+            // bail out if the interpreter is finalizing — acquiring the GIL after
+            // finalization has started triggers a fatal error in PyGILState_Ensure
+            #if PY_VERSION_HEX < 0x30d0000
+            if (_Py_IsFinalizing()) {
+            #else
+            if (Py_IsFinalizing()) {
+            #endif
+                return;
+            }
+
             auto link_state = m_link.captureAppSessionState();
 
             auto link_time = m_link.clock().micros();
