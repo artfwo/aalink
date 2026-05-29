@@ -78,8 +78,7 @@ struct Scheduler {
         using namespace std::chrono_literals;
 
         while (!m_stop_thread.load(std::memory_order_relaxed)) {
-            // bail out if the interpreter is finalizing — acquiring the GIL after
-            // finalization has started triggers a fatal error in PyGILState_Ensure
+            // prevent fatal error when acquiring GIL during interpreter shutdown
             #if PY_VERSION_HEX < 0x30d0000
             if (_Py_IsFinalizing()) {
             #else
@@ -107,7 +106,12 @@ struct Scheduler {
 
                     if (loop_is_running) {
                         auto loop_call_soon_threadsafe = m_loop.attr("call_soon_threadsafe");
-                        loop_call_soon_threadsafe(py::cpp_function(&set_future_result), it->future, it->link_beat);
+
+                        try {
+                            loop_call_soon_threadsafe(py::cpp_function(&set_future_result), it->future, it->link_beat);
+                        } catch (py::error_already_set&) {
+                            // loop closed after the is_running() check
+                        }
                     }
 
                     it = m_events.erase(it);
@@ -182,6 +186,18 @@ struct Link {
         }
 
         m_scheduler = std::make_unique<Scheduler>(m_link, m_loop);
+
+        m_link.setNumPeersCallback([this](std::size_t num_peers) {
+            dispatch_callbacks(m_num_peers_callbacks, num_peers);
+        });
+
+        m_link.setTempoCallback([this](double tempo) {
+            dispatch_callbacks(m_tempo_callbacks, tempo);
+        });
+
+        m_link.setStartStopCallback([this](bool playing) {
+            dispatch_callbacks(m_start_stop_callbacks, playing);
+        });
     }
 
     std::size_t num_peers() {
@@ -285,52 +301,81 @@ struct Link {
         m_scheduler->reschedule_sync_events(beat);
     }
 
-    void set_num_peers_callback(py::function callback) {
-        m_link.setNumPeersCallback([this, callback](std::size_t num_peers) {
-            // ensure the callback isn't called when the runtime is finalizing
-            #if PY_VERSION_HEX < 0x30d0000
-            if (!_Py_IsFinalizing()) {
-            #else
-            if (!Py_IsFinalizing()) {
-            #endif
-                py::gil_scoped_acquire acquire;
+    template <typename T>
+    void dispatch_callbacks(py::list& callbacks, T value) {
+        // prevent fatal error when acquiring GIL during interpreter shutdown
+        #if PY_VERSION_HEX < 0x30d0000
+        if (_Py_IsFinalizing()) {
+        #else
+        if (Py_IsFinalizing()) {
+        #endif
+            return;
+        }
 
-                auto loop_call_soon_threadsafe = this->m_loop.attr("call_soon_threadsafe");
-                loop_call_soon_threadsafe(callback, num_peers);
+        py::gil_scoped_acquire acquire;
+
+        if (!py::cast<bool>(m_loop.attr("is_running")())) {
+            return;
+        }
+
+        auto loop_call_soon_threadsafe = m_loop.attr("call_soon_threadsafe");
+
+        // prevent a data race when the callback list is updated concurrently
+        py::list callbacks_copy = callbacks.attr("copy")();
+
+        for (auto callback : callbacks_copy) {
+            try {
+                loop_call_soon_threadsafe(callback, value);
+            } catch (py::error_already_set&) {
+                // loop closed after the is_running() check
+                break;
             }
-        });
+        }
+    }
+
+    static void remove_callback(py::list& callbacks, py::function callback) {
+        if (callbacks.contains(callback)) {
+            callbacks.attr("remove")(callback);
+        }
+    }
+
+    void add_num_peers_callback(py::function callback) {
+        m_num_peers_callbacks.append(callback);
+    }
+
+    void remove_num_peers_callback(py::function callback) {
+        remove_callback(m_num_peers_callbacks, callback);
+    }
+
+    void set_num_peers_callback(py::function callback) {
+        m_num_peers_callbacks.attr("clear")();
+        m_num_peers_callbacks.append(callback);
+    }
+
+    void add_tempo_callback(py::function callback) {
+        m_tempo_callbacks.append(callback);
+    }
+
+    void remove_tempo_callback(py::function callback) {
+        remove_callback(m_tempo_callbacks, callback);
     }
 
     void set_tempo_callback(py::function callback) {
-        m_link.setTempoCallback([this, callback](double tempo) {
-            // ensure the callback isn't called when the runtime is finalizing
-            #if PY_VERSION_HEX < 0x30d0000
-            if (!_Py_IsFinalizing()) {
-            #else
-            if (!Py_IsFinalizing()) {
-            #endif
-                py::gil_scoped_acquire acquire;
+        m_tempo_callbacks.attr("clear")();
+        m_tempo_callbacks.append(callback);
+    }
 
-                auto loop_call_soon_threadsafe = this->m_loop.attr("call_soon_threadsafe");
-                loop_call_soon_threadsafe(callback, tempo);
-            }
-        });
+    void add_start_stop_callback(py::function callback) {
+        m_start_stop_callbacks.append(callback);
+    }
+
+    void remove_start_stop_callback(py::function callback) {
+        remove_callback(m_start_stop_callbacks, callback);
     }
 
     void set_start_stop_callback(py::function callback) {
-        m_link.setStartStopCallback([this, callback](bool playing) {
-            // ensure the callback isn't called when the runtime is finalizing
-            #if PY_VERSION_HEX < 0x30d0000
-            if (!_Py_IsFinalizing()) {
-            #else
-            if (!Py_IsFinalizing()) {
-            #endif
-                py::gil_scoped_acquire acquire;
-
-                auto loop_call_soon_threadsafe = this->m_loop.attr("call_soon_threadsafe");
-                loop_call_soon_threadsafe(callback, playing);
-            }
-        });
+        m_start_stop_callbacks.attr("clear")();
+        m_start_stop_callbacks.append(callback);
     }
 
     py::object sync(double beat, double offset, double origin) {
@@ -342,6 +387,10 @@ struct Link {
     ableton::Link m_link;
     py::object m_loop;
     std::unique_ptr<Scheduler> m_scheduler;
+
+    py::list m_num_peers_callbacks;
+    py::list m_tempo_callbacks;
+    py::list m_start_stop_callbacks;
 };
 
 PYBIND11_MODULE(aalink, m) {
@@ -361,7 +410,13 @@ PYBIND11_MODULE(aalink, m) {
         .def("request_beat_at_start_playing_time", &Link::request_beat_at_start_playing_time)
         .def("set_is_playing_and_request_beat_at_time", &Link::set_is_playing_and_request_beat_at_time)
         .def("set_num_peers_callback", &Link::set_num_peers_callback)
+        .def("add_num_peers_callback", &Link::add_num_peers_callback)
+        .def("remove_num_peers_callback", &Link::remove_num_peers_callback)
         .def("set_tempo_callback", &Link::set_tempo_callback)
+        .def("add_tempo_callback", &Link::add_tempo_callback)
+        .def("remove_tempo_callback", &Link::remove_tempo_callback)
         .def("set_start_stop_callback", &Link::set_start_stop_callback)
+        .def("add_start_stop_callback", &Link::add_start_stop_callback)
+        .def("remove_start_stop_callback", &Link::remove_start_stop_callback)
         .def("sync", &Link::sync, py::arg("beat"), py::arg("offset") = 0, py::arg("origin") = 0);
 }
