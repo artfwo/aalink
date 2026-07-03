@@ -396,6 +396,11 @@ struct Link {
     }
 
     py::object sync(double beat, double offset, double origin) {
+        // prevent hanging in next_link_beat on non-positive or NaN beats
+        if (!(beat > 0)) {
+            throw py::value_error("invalid beat value");
+        }
+
         auto future = m_loop.attr("create_future")();
         m_scheduler->schedule_sync(future, beat, offset, origin);
         return future;
