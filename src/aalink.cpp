@@ -58,7 +58,9 @@ struct Scheduler {
         m_thread = std::thread(&Scheduler::run, this);
     }
 
-    ~Scheduler() {
+    // must be called once before destruction, with the GIL released, or the
+    // scheduler thread may deadlock against join() while blocked on GIL acquisition
+    void stop() {
         m_stop_thread.store(true, std::memory_order_relaxed);
 
         // workaround for a rare deadlock during interpreter shutdown: the scheduler
@@ -177,46 +179,61 @@ struct Scheduler {
 };
 
 struct Link {
-    Link(double bpm, py::object loop = py::none()) : m_link(bpm), m_loop(loop) {
+    Link(double bpm, py::object loop = py::none()) : m_loop(loop) {
         if (m_loop.is_none()) {
             m_loop = py::module_::import("asyncio").attr("get_running_loop")();
         } else {
-            py::warnings::warn("The 'loop' parameter is deprecated and will be removed in future versions of aalink",
-               PyExc_DeprecationWarning, 1);
+            py::warnings::warn("The 'loop' parameter is deprecated and will be removed in future versions of aalink", PyExc_DeprecationWarning, 1);
         }
 
-        m_scheduler = std::make_unique<Scheduler>(m_link, m_loop);
+        m_link = std::make_unique<ableton::Link>(bpm);
+        m_scheduler = std::make_unique<Scheduler>(*m_link, m_loop);
 
-        m_link.setNumPeersCallback([this](std::size_t num_peers) {
+        m_link->setNumPeersCallback([this](std::size_t num_peers) {
             dispatch_callbacks(m_num_peers_callbacks, num_peers);
         });
 
-        m_link.setTempoCallback([this](double tempo) {
+        m_link->setTempoCallback([this](double tempo) {
             dispatch_callbacks(m_tempo_callbacks, tempo);
         });
 
-        m_link.setStartStopCallback([this](bool playing) {
+        m_link->setStartStopCallback([this](bool playing) {
             dispatch_callbacks(m_start_stop_callbacks, playing);
         });
     }
 
+    ~Link() {
+        {
+            // release the GIL so Link and scheduler threads blocked on GIL
+            // acquisition can finish instead of deadlocking against teardown
+            py::gil_scoped_release release;
+
+            m_scheduler->stop();
+            m_link.reset();
+        }
+
+        // re-acquire the GIL and destroy the scheduler
+        // holding pending Python futures and loop reference.
+        m_scheduler.reset();
+    }
+
     std::size_t num_peers() {
-        return m_link.numPeers();
+        return m_link->numPeers();
     }
 
     double beat() {
-        auto link_state = m_link.captureAppSessionState();
+        auto link_state = m_link->captureAppSessionState();
         auto link_quantum = m_scheduler->m_link_quantum.load(std::memory_order_relaxed);
-        return link_state.beatAtTime(m_link.clock().micros(), link_quantum);
+        return link_state.beatAtTime(m_link->clock().micros(), link_quantum);
     }
 
     double phase() {
-        auto link_state = m_link.captureAppSessionState();
-        return link_state.phaseAtTime(m_link.clock().micros(), m_scheduler->m_link_quantum.load(std::memory_order_relaxed));
+        auto link_state = m_link->captureAppSessionState();
+        return link_state.phaseAtTime(m_link->clock().micros(), m_scheduler->m_link_quantum.load(std::memory_order_relaxed));
     }
 
     std::chrono::microseconds time() {
-        return m_link.clock().micros();
+        return m_link->clock().micros();
     }
 
     double quantum() {
@@ -228,75 +245,75 @@ struct Link {
     }
 
     bool enabled() {
-        return m_link.isEnabled();
+        return m_link->isEnabled();
     }
 
     void set_enabled(bool enabled) {
-        m_link.enable(enabled);
+        m_link->enable(enabled);
     }
 
     bool start_stop_sync_enabled() {
-        return m_link.isStartStopSyncEnabled();
+        return m_link->isStartStopSyncEnabled();
     }
 
     void set_start_stop_sync_enabled(bool enabled) {
-        m_link.enableStartStopSync(enabled);
+        m_link->enableStartStopSync(enabled);
     }
 
     double tempo() {
-        auto link_state = m_link.captureAppSessionState();
+        auto link_state = m_link->captureAppSessionState();
         return link_state.tempo();
     }
 
     void set_tempo(double tempo) {
-        auto link_state = m_link.captureAppSessionState();
-        link_state.setTempo(tempo, m_link.clock().micros());
-        m_link.commitAppSessionState(link_state);
+        auto link_state = m_link->captureAppSessionState();
+        link_state.setTempo(tempo, m_link->clock().micros());
+        m_link->commitAppSessionState(link_state);
     }
 
     bool playing() {
-        auto link_state = m_link.captureAppSessionState();
+        auto link_state = m_link->captureAppSessionState();
         return link_state.isPlaying();
     }
 
     void set_playing(bool playing) {
-        auto link_state = m_link.captureAppSessionState();
-        link_state.setIsPlaying(playing, m_link.clock().micros());
-        m_link.commitAppSessionState(link_state);
+        auto link_state = m_link->captureAppSessionState();
+        link_state.setIsPlaying(playing, m_link->clock().micros());
+        m_link->commitAppSessionState(link_state);
     }
 
     void request_beat(double beat) {
-        auto link_state = m_link.captureAppSessionState();
+        auto link_state = m_link->captureAppSessionState();
         auto link_quantum = m_scheduler->m_link_quantum.load(std::memory_order_relaxed);
-        link_state.requestBeatAtTime(beat, m_link.clock().micros(), link_quantum);
-        m_link.commitAppSessionState(link_state);
+        link_state.requestBeatAtTime(beat, m_link->clock().micros(), link_quantum);
+        m_link->commitAppSessionState(link_state);
 
         m_scheduler->reschedule_sync_events(beat);
     }
 
     void force_beat(double beat) {
-        auto link_state = m_link.captureAppSessionState();
+        auto link_state = m_link->captureAppSessionState();
         auto link_quantum = m_scheduler->m_link_quantum.load(std::memory_order_relaxed);
-        link_state.forceBeatAtTime(beat, m_link.clock().micros(), link_quantum);
-        m_link.commitAppSessionState(link_state);
+        link_state.forceBeatAtTime(beat, m_link->clock().micros(), link_quantum);
+        m_link->commitAppSessionState(link_state);
 
         m_scheduler->reschedule_sync_events(beat);
     }
 
     void request_beat_at_start_playing_time(double beat) {
-        auto link_state = m_link.captureAppSessionState();
+        auto link_state = m_link->captureAppSessionState();
         auto link_quantum = m_scheduler->m_link_quantum.load(std::memory_order_relaxed);
         link_state.requestBeatAtStartPlayingTime(beat, link_quantum);
-        m_link.commitAppSessionState(link_state);
+        m_link->commitAppSessionState(link_state);
 
         m_scheduler->reschedule_sync_events(beat);
     }
 
     void set_is_playing_and_request_beat_at_time(bool playing, std::chrono::microseconds time, double beat) {
-        auto link_state = m_link.captureAppSessionState();
+        auto link_state = m_link->captureAppSessionState();
         auto link_quantum = m_scheduler->m_link_quantum.load(std::memory_order_relaxed);
         link_state.setIsPlayingAndRequestBeatAtTime(playing, time, beat, link_quantum);
-        m_link.commitAppSessionState(link_state);
+        m_link->commitAppSessionState(link_state);
 
         m_scheduler->reschedule_sync_events(beat);
     }
@@ -384,9 +401,10 @@ struct Link {
         return future;
     }
 
-    ableton::Link m_link;
-    py::object m_loop;
+    std::unique_ptr<ableton::Link> m_link;
     std::unique_ptr<Scheduler> m_scheduler;
+
+    py::object m_loop;
 
     py::list m_num_peers_callbacks;
     py::list m_tempo_callbacks;
