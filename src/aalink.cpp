@@ -71,8 +71,6 @@ struct Scheduler {
     }
 
     void run() {
-        using namespace std::chrono_literals;
-
         while (!m_stop_thread.load(std::memory_order_relaxed)) {
             auto link_state = m_link.captureAppSessionState();
 
@@ -83,33 +81,40 @@ struct Scheduler {
             m_link_beat.store(link_beat, std::memory_order_relaxed);
             m_link_time.store(link_time.count() / 1e6, std::memory_order_relaxed);
 
-            m_events_mutex.lock();
+            std::list<SchedulerSyncEvent> ready_events;
 
-            for (auto it = m_events.begin(); it != m_events.end();) {
-                if (link_beat > it->link_beat) {
-                    py::gil_scoped_acquire acquire;
+            {
+                std::lock_guard<std::mutex> lock(m_events_mutex);
 
-                    bool loop_is_running = py::cast<bool>(m_loop.attr("is_running")());
-
-                    if (loop_is_running) {
-                        auto loop_call_soon_threadsafe = m_loop.attr("call_soon_threadsafe");
-
-                        try {
-                            loop_call_soon_threadsafe(m_set_future_result, it->future, it->link_beat);
-                        } catch (py::error_already_set&) {
-                            // loop closed after the is_running() check
-                        }
+                for (auto it = m_events.begin(); it != m_events.end();) {
+                    if (link_beat > it->link_beat) {
+                        ready_events.splice(ready_events.end(), m_events, it++);
+                    } else {
+                        ++it;
                     }
-
-                    it = m_events.erase(it);
-                } else {
-                    ++it;
                 }
             }
 
-            m_events_mutex.unlock();
+            // dispatch due events after unlocking m_events_mutex to prevent
+            // lock order inversion between m_events_mutex and the GIL
+            if (!ready_events.empty()) {
+                py::gil_scoped_acquire acquire;
 
-            std::this_thread::sleep_for(1ms);
+                auto loop_call_soon_threadsafe = m_loop.attr("call_soon_threadsafe");
+
+                for (auto& event : ready_events) {
+                    try {
+                        loop_call_soon_threadsafe(m_set_future_result, event.future, event.link_beat);
+                    } catch (py::error_already_set&) {
+                        // loop closed - drop the event
+                    }
+                }
+
+                // should be destroyed while the GIL is acquired
+                ready_events.clear();
+            }
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
     }
 
@@ -124,21 +129,12 @@ struct Scheduler {
             .link_beat = next_link_beat(link_beat, beat, offset, origin),
         };
 
-        // prevent occasional deadlocks when the scheduler thread locks
-        // m_events_mutex first and then acquires the GIL to dispatch callbacks
-        py::gil_scoped_release release;
-
-        m_events_mutex.lock();
+        std::lock_guard<std::mutex> lock(m_events_mutex);
         m_events.push_back(std::move(event));
-        m_events_mutex.unlock();
     }
 
     void reschedule_sync_events(double link_beat) {
-        // prevent occasional deadlocks when the scheduler thread locks
-        // m_events_mutex first and then acquires the GIL to dispatch callbacks
-        py::gil_scoped_release release;
-
-        m_events_mutex.lock();
+        std::lock_guard<std::mutex> lock(m_events_mutex);
 
         for (auto& event : m_events) {
             event.link_beat = next_link_beat(link_beat, event.beat, event.offset, event.origin);
@@ -146,8 +142,6 @@ struct Scheduler {
 
         // update m_link_beat here to ensure that interim sync events will not be scheduled later
         m_link_beat.store(link_beat, std::memory_order_relaxed);
-
-        m_events_mutex.unlock();
     }
 
     std::thread m_thread;
@@ -358,10 +352,6 @@ struct Link {
 
         py::gil_scoped_acquire acquire;
 
-        if (!py::cast<bool>(m_loop.attr("is_running")())) {
-            return;
-        }
-
         auto loop_call_soon_threadsafe = m_loop.attr("call_soon_threadsafe");
 
         // prevent a data race when the callback list is updated concurrently
@@ -371,7 +361,7 @@ struct Link {
             try {
                 loop_call_soon_threadsafe(callback, value);
             } catch (py::error_already_set&) {
-                // loop closed after the is_running() check
+                // loop closed
                 break;
             }
         }
