@@ -7,7 +7,9 @@
 #include <cmath>
 #include <list>
 #include <memory>
+#include <mutex>
 #include <thread>
+#include <vector>
 
 #include <ableton/Link.hpp>
 
@@ -43,8 +45,6 @@ static double next_link_beat(double current_beat, double sync_beat, double offse
 }
 
 static void set_future_result(py::object future, double link_beat) {
-    py::gil_scoped_acquire acquire;
-
     bool done = py::cast<bool>(future.attr("done")());
 
     if (!done) {
@@ -58,20 +58,13 @@ struct Scheduler {
         m_thread = std::thread(&Scheduler::run, this);
     }
 
-    // must be called once before destruction, with the GIL released, or the
-    // scheduler thread may deadlock against join() while blocked on GIL acquisition
+    // must be called with the GIL released, or the scheduler thread may
+    // deadlock against join() while blocked on GIL acquisition
     void stop() {
         m_stop_thread.store(true, std::memory_order_relaxed);
 
-        // workaround for a rare deadlock during interpreter shutdown: the scheduler
-        // thread may be blocked on GIL while jthread's destructor waits in join()
-        #if PY_VERSION_HEX < 0x30d0000
-        if (_Py_IsFinalizing()) {
-        #else
-        if (Py_IsFinalizing()) {
-        #endif
-            m_thread.detach();
-        } else {
+        // prevent double join when the scheduler was already stopped at exit
+        if (m_thread.joinable()) {
             m_thread.join();
         }
     }
@@ -80,15 +73,6 @@ struct Scheduler {
         using namespace std::chrono_literals;
 
         while (!m_stop_thread.load(std::memory_order_relaxed)) {
-            // prevent fatal error when acquiring GIL during interpreter shutdown
-            #if PY_VERSION_HEX < 0x30d0000
-            if (_Py_IsFinalizing()) {
-            #else
-            if (Py_IsFinalizing()) {
-            #endif
-                return;
-            }
-
             auto link_state = m_link.captureAppSessionState();
 
             auto link_time = m_link.clock().micros();
@@ -178,6 +162,40 @@ struct Scheduler {
     py::object m_loop;
 };
 
+// live schedulers to be stopped when Python interpreter shuts down
+struct SchedulerRegistry {
+    // registry mutex must be locked with released GIL
+    // (the mutex is serializing access instead here)
+    // to prevent deadlocks against stop_all() joining scheduler
+    // threads that are blocked on GIL acquisition
+    std::mutex mutex;
+    std::vector<Scheduler*> schedulers;
+
+    void add(Scheduler* scheduler) {
+        std::lock_guard<std::mutex> lock(mutex);
+        schedulers.push_back(scheduler);
+    }
+
+    void remove(Scheduler* scheduler) {
+        std::lock_guard<std::mutex> lock(mutex);
+        std::erase(schedulers, scheduler);
+    }
+
+    // registered with atexit to stop scheduler threads while joining
+    // them is still safe, before the interpreter starts finalizing
+    void stop_all() {
+        py::gil_scoped_release release;
+
+        std::lock_guard<std::mutex> lock(mutex);
+
+        for (auto* scheduler : schedulers) {
+            scheduler->stop();
+        }
+    }
+};
+
+static SchedulerRegistry aalink_scheduler_registry;
+
 struct Link {
     Link(double bpm, py::object loop = py::none()) : m_loop(loop) {
         if (m_loop.is_none()) {
@@ -188,6 +206,11 @@ struct Link {
 
         m_link = std::make_unique<ableton::Link>(bpm);
         m_scheduler = std::make_unique<Scheduler>(*m_link, m_loop);
+
+        {
+            py::gil_scoped_release release;
+            aalink_scheduler_registry.add(m_scheduler.get());
+        }
 
         m_link->setNumPeersCallback([this](std::size_t num_peers) {
             dispatch_callbacks(m_num_peers_callbacks, num_peers);
@@ -208,6 +231,7 @@ struct Link {
             // acquisition can finish instead of deadlocking against teardown
             py::gil_scoped_release release;
 
+            aalink_scheduler_registry.remove(m_scheduler.get());
             m_scheduler->stop();
             m_link.reset();
         }
@@ -417,6 +441,10 @@ struct Link {
 };
 
 PYBIND11_MODULE(aalink, m) {
+    py::module_::import("atexit").attr("register")(py::cpp_function([]() {
+        aalink_scheduler_registry.stop_all();
+    }));
+
     py::class_<Link>(m, "Link")
         .def(py::init<double, py::object>(), py::arg("bpm"), py::arg("loop") = py::none())
         .def_property_readonly("num_peers", &Link::num_peers)
