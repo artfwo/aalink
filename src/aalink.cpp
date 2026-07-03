@@ -55,6 +55,7 @@ static void set_future_result(py::object future, double link_beat) {
 
 struct Scheduler {
     Scheduler(ableton::Link& link, py::object loop) : m_link(link), m_loop(loop) {
+        m_set_future_result = py::cpp_function(&set_future_result);
         m_thread = std::thread(&Scheduler::run, this);
     }
 
@@ -94,7 +95,7 @@ struct Scheduler {
                         auto loop_call_soon_threadsafe = m_loop.attr("call_soon_threadsafe");
 
                         try {
-                            loop_call_soon_threadsafe(py::cpp_function(&set_future_result), it->future, it->link_beat);
+                            loop_call_soon_threadsafe(m_set_future_result, it->future, it->link_beat);
                         } catch (py::error_already_set&) {
                             // loop closed after the is_running() check
                         }
@@ -159,7 +160,9 @@ struct Scheduler {
     std::atomic<double> m_link_quantum{1};
 
     ableton::Link& m_link;
+
     py::object m_loop;
+    py::object m_set_future_result;
 };
 
 // live schedulers to be stopped when Python interpreter shuts down
