@@ -9,6 +9,8 @@ It provides a simple programming interface for writing concurrent Python code
 synchronized to a beat. The beat can optionally be time-aligned with other
 peers in an Ableton Link session.
 
+Now also available for Node.js: `aalink-js <https://github.com/artfwo/aalink-js>`_.
+
 Installation
 ============
 
